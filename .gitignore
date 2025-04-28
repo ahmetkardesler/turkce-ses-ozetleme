@@ -40,3 +40,6 @@ yarn-error.log*
 # İşletim Sistemi Dosyaları
 .DS_Store
 Thumbs.db 
+
+# Memory Bank (Oluşturulan Proje Belgeleri)
+memory-bank/ 
