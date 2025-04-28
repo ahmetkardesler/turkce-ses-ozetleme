@@ -43,3 +43,6 @@ Thumbs.db
 
 # Memory Bank (Oluşturulan Proje Belgeleri)
 memory-bank/ 
+
+# Windows Batch Dosyaları
+*.bat 
