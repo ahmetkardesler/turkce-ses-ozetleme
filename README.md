@@ -4,7 +4,7 @@ Bu proje, kullanıcıların yüklediği Türkçe ses dosyalarını (MP3, WAV, OG
 
 ## Özellikler
 
-- **Ses Dosyası Yükleme:** Farklı formatlardaki ses dosyalarını kabul eder.
+- **Ses Dosyası Yükleme:** Farklı formatlardaki (MP3, WAV, OGG, FLAC, M4A) ses dosyalarını kabul eder.
 - **Ses Tanıma (Vosk):** Yüklenen ses dosyalarını Türkçe metne dönüştürmek için Vosk kütüphanesini kullanır.
 - **Format Dönüşümü (FFmpeg):** Farklı ses formatlarını Vosk'un işleyebileceği WAV formatına dönüştürmek için FFmpeg'i kullanır.
 - **Metin Özetleme (Gemini):** Vosk tarafından oluşturulan metni Google Gemini (1.5 Flash modeli) kullanarak özetler.
