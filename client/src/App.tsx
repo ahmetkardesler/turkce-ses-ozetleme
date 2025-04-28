@@ -116,6 +116,66 @@ function App() {
     }
   };
 
+  // Yeni Export Fonksiyonu
+  const handleExport = async (
+    format: "pdf" | "docx",
+    type: "transcription" | "summary"
+  ) => {
+    const content = type === "transcription" ? transcription : summary;
+    if (!content) {
+      alert("Dışa aktarılacak içerik bulunamadı.");
+      return;
+    }
+
+    const endpoint = `/export/${format}`;
+    const filename = `${type}.${format}`;
+    console.log(`Dışa aktarma isteği: ${endpoint} for ${type}`);
+
+    // TODO: İsteğe bağlı olarak export sırasında butonları disable etmek için state eklenebilir
+
+    try {
+      const response = await fetch(`http://localhost:5001${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ content: content, type: type }),
+      });
+
+      if (!response.ok) {
+        // Hata durumunda JSON yanıtı beklenir
+        const errorData = await response
+          .json()
+          .catch(() => ({ error: "Bilinmeyen bir backend hatası oluştu." }));
+        throw new Error(
+          errorData.error || `HTTP hatası! Durum: ${response.status}`
+        );
+      }
+
+      // Başarılı yanıtta dosya içeriği (blob) beklenir
+      const blob = await response.blob();
+
+      // Tarayıcıda indirme işlemini tetikle
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+
+      // Linki temizle
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url); // Belleği serbest bırak
+    } catch (error) {
+      console.error(`Dışa aktarma hatası (${format}, ${type}):`, error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Dosya dışa aktarılırken bir hata oluştu.";
+      alert(`Hata: ${errorMessage}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col items-center py-10 px-4">
       <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
@@ -186,24 +246,40 @@ function App() {
           <div className="results-section space-y-6">
             {transcription && (
               <div className="transcription bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
                   <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
                     Metin Transkripti
                   </h2>
-                  {!summary && !isSummarizing && (
+                  <div className="flex gap-2">
+                    {!summary && !isSummarizing && (
+                      <button
+                        onClick={handleSummarize}
+                        disabled={isSummarizing}
+                        className={`px-4 py-1 rounded-md text-sm text-white font-medium transition-colors duration-200 flex items-center justify-center 
+                          ${
+                            isSummarizing
+                              ? "bg-gray-400 dark:bg-gray-600 cursor-not-allowed"
+                              : "bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
+                          }`}
+                      >
+                        Özetle
+                      </button>
+                    )}
                     <button
-                      onClick={handleSummarize}
-                      disabled={isSummarizing}
-                      className={`px-4 py-1 rounded-md text-sm text-white font-medium transition-colors duration-200 flex items-center justify-center 
-                        ${
-                          isSummarizing
-                            ? "bg-gray-400 dark:bg-gray-600 cursor-not-allowed"
-                            : "bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600"
-                        }`}
+                      onClick={() => handleExport("pdf", "transcription")}
+                      className="px-3 py-1 rounded-md text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors duration-200"
+                      title="PDF olarak dışa aktar"
                     >
-                      Özetle
+                      PDF
                     </button>
-                  )}
+                    <button
+                      onClick={() => handleExport("docx", "transcription")}
+                      className="px-3 py-1 rounded-md text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium transition-colors duration-200"
+                      title="Word olarak dışa aktar"
+                    >
+                      DOCX
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   readOnly
@@ -214,9 +290,29 @@ function App() {
             )}
             {(summary || isSummarizing) && (
               <div className="summary bg-gray-50 dark:bg-gray-700 p-4 rounded-lg shadow-sm">
-                <h2 className="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-200">
-                  Özet
-                </h2>
+                <div className="flex justify-between items-center mb-2 flex-wrap gap-2">
+                  <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                    Özet
+                  </h2>
+                  {!isSummarizing && summary && !summary.startsWith("[") && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleExport("pdf", "summary")}
+                        className="px-3 py-1 rounded-md text-sm bg-red-500 hover:bg-red-600 text-white font-medium transition-colors duration-200"
+                        title="PDF olarak dışa aktar"
+                      >
+                        PDF
+                      </button>
+                      <button
+                        onClick={() => handleExport("docx", "summary")}
+                        className="px-3 py-1 rounded-md text-sm bg-blue-500 hover:bg-blue-600 text-white font-medium transition-colors duration-200"
+                        title="Word olarak dışa aktar"
+                      >
+                        DOCX
+                      </button>
+                    </div>
+                  )}
+                </div>
                 {isSummarizing ? (
                   <div className="flex items-center justify-center h-48 text-gray-500 dark:text-gray-400">
                     <svg
