@@ -77,7 +77,7 @@ def hello():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    global model, gemini_model  # Gemini modelini de global ekle
+    global model
     if model is None:
         print("Hata: Vosk modeli yüklenmediği için işlem yapılamıyor.")
         return jsonify({"error": "Ses tanıma modeli sunucuda yüklenemedi."}), 500
@@ -102,10 +102,8 @@ def upload_file():
         temp_output_filepath = os.path.join(
             UPLOAD_FOLDER, temp_output_filename)
 
-        filepath_to_process = None  # Vosk'a gönderilecek dosya yolu
+        filepath_to_process = None
         full_transcription = ""
-        # Varsayılan özet
-        summary = "[Özetleme yapılamadı - API anahtarı veya model sorunu]"
 
         try:
             # 1. Orijinal dosyayı kaydet
@@ -170,31 +168,11 @@ def upload_file():
                 print("Hata: İşlenecek dönüştürülmüş dosya bulunamadı.")
                 raise Exception("Ses dosyası dönüştürülemedi veya işlenemedi.")
 
-            # 4. Gemini ile Özetleme
-            if gemini_model and full_transcription:
-                try:
-                    print("Gemini ile özetleme başlatılıyor...")
-                    prompt_text = SUMMARY_PROMPT.format(
-                        text=full_transcription)
-                    # Gemini API çağrısı
-                    response = gemini_model.generate_content(prompt_text)
-                    # Yanıtın text kısmını al
-                    summary = response.text.strip()
-                    print("Gemini özetlemesi tamamlandı.")
-                except Exception as e:
-                    print(f"Gemini API çağrısı sırasında hata oluştu: {e}")
-                    summary = "[Özetleme sırasında bir hata oluştu]"
-            elif not gemini_model:
-                print("Uyarı: Gemini modeli yapılandırılmadığı için özetleme atlandı.")
-                summary = "[Özetleme yapılamadı - Model yüklenmedi]"
-            else:  # full_transcription boş ise
-                summary = "[Özetleme yapılamadı - Transkripsiyon boş]"
-
+            # Sadece transkripsiyonu döndür
             return jsonify({
-                "message": "Dosya başarıyla işlendi.",
+                "message": "Dosya başarıyla metne dönüştürüldü.",
                 "filename": original_filename,
                 "transcription": full_transcription,
-                "summary": summary
             })
 
         except FileNotFoundError as e:
@@ -227,6 +205,50 @@ def upload_file():
     else:
         allowed_types = ", ".join(ALLOWED_EXTENSIONS)
         return jsonify({"error": f"İzin verilmeyen dosya türü. Desteklenen türler: {allowed_types}"}), 400
+
+
+# Yeni Özetleme Endpoint'i
+@app.route('/summarize', methods=['POST'])
+def summarize_text():
+    # İstekten JSON verisini al
+    data = request.get_json()
+    if not data or 'transcription' not in data:
+        return jsonify({"error": "İstekte 'transcription' alanı bulunamadı veya JSON formatı hatalı."}), 400
+
+    transcription = data['transcription']
+
+    if not transcription:
+        return jsonify({"error": "Özetlenecek metin boş olamaz."}), 400
+
+    # Yardımcı fonksiyonu kullanarak özeti al
+    summary = get_gemini_summary(transcription)
+
+    return jsonify({
+        "summary": summary
+    })
+
+
+# Gemini özetleme için yardımcı fonksiyon (opsiyonel ama kodu temizler)
+def get_gemini_summary(text_to_summarize):
+    global gemini_model
+    if not gemini_model or not text_to_summarize:
+        print("Uyarı: Gemini modeli yok veya metin boş, özetleme yapılamıyor.")
+        # Duruma göre farklı mesajlar döndürülebilir
+        if not gemini_model:
+            return "[Özetleme yapılamadı - Model yüklenmedi]"
+        else:
+            return "[Özetleme yapılamadı - Transkripsiyon boş]"
+
+    try:
+        print("Gemini ile özetleme başlatılıyor...")
+        prompt_text = SUMMARY_PROMPT.format(text=text_to_summarize)
+        response = gemini_model.generate_content(prompt_text)
+        summary = response.text.strip()
+        print("Gemini özetlemesi tamamlandı.")
+        return summary
+    except Exception as e:
+        print(f"Gemini API çağrısı sırasında hata oluştu: {e}")
+        return "[Özetleme sırasında bir hata oluştu]"
 
 
 if __name__ == '__main__':
