@@ -1,16 +1,17 @@
 # Turkish Speech-to-Text and Summarization Web App
 
-This project is a web application that transcribes Turkish audio files (MP3, WAV, OGG, FLAC, M4A) uploaded by users into text. Optionally, users can then summarize the generated transcript using Google Gemini and export either the transcript or the summary to PDF or DOCX formats.
+This project is a web application that transcribes Turkish audio into text either from user-uploaded audio files (MP3, WAV, OGG, FLAC, M4A) or from YouTube video links. Optionally, users can then summarize the generated transcript using Google Gemini and export either the transcript or the summary to PDF or DOCX formats.
 
 ## Features
 
 - **Audio File Upload:** Accepts audio files in various common formats.
-- **Speech Recognition (Vosk):** Uses the Vosk library to convert uploaded audio files into Turkish text.
-- **Format Conversion (FFmpeg):** Uses FFmpeg to convert different audio formats into the WAV format that Vosk can process.
+- **YouTube Link Processing:** Accepts YouTube video links, extracts the audio, and transcribes it.
+- **Speech Recognition (Vosk):** Uses the Vosk library to convert audio (from file or YouTube) into Turkish text.
+- **Format Conversion (FFmpeg):** Uses FFmpeg internally (via Vosk setup and yt-dlp) to handle various audio formats and ensure compatibility with Vosk.
 - **Optional Text Summarization (Gemini):** Summarizes the generated transcript on demand using Google Gemini (1.5 Flash model).
 - **Export Results:** Allows exporting the full transcript or the summary to PDF and Microsoft Word (.docx) formats.
-- **Web Interface (React):** Provides a user-friendly interface for file upload, displaying the transcript, triggering summarization, and exporting results.
-- **Backend API (Flask):** Offers a Flask API to manage audio processing, format conversion, speech recognition (Vosk), summarization (Gemini), and file export.
+- **Web Interface (React):** Provides a user-friendly interface for uploading files or entering YouTube links, displaying the transcript, triggering summarization, and exporting results.
+- **Backend API (Flask):** Offers a Flask API to manage audio processing, format conversion, speech recognition (Vosk), YouTube audio extraction (yt-dlp), summarization (Gemini), and file export.
 
 ## Technology Stack
 
@@ -22,12 +23,13 @@ This project is a web application that transcribes Turkish audio files (MP3, WAV
   - Python 3.x
   - Flask
   - Vosk (Speech Recognition)
+  - `yt-dlp` (YouTube Audio Extraction)
   - Google Generative AI SDK (Gemini Summarization)
   - `fpdf2` (PDF Export)
   - `python-docx` (DOCX Export)
   - `python-dotenv` (Environment Variable Management)
 - **Other:**
-  - FFmpeg (Must be installed on the system for audio format conversion)
+  - FFmpeg (Must be installed on the system for audio format conversion, used by Vosk and yt-dlp)
 
 ## Folder Structure
 
@@ -38,7 +40,7 @@ vtest/
 ├── server/         # Backend Flask application
 │   ├── fonts/      # Font files for PDF export (e.g., DejaVuSans.ttf)
 │   ├── model/      # Downloaded Vosk model
-│   ├── uploads/    # Temporary upload folder (excluded by .gitignore)
+│   ├── uploads/    # Temporary upload/download folder (excluded by .gitignore)
 │   ├── venv/       # Python virtual environment (excluded by .gitignore)
 │   ├── .env        # API key (excluded by .gitignore)
 │   ├── app.py      # Main Flask application
@@ -55,7 +57,7 @@ vtest/
 
 1.  **Node.js and npm/yarn:** Required for the frontend. [Download Node.js](https://nodejs.org/)
 2.  **Python 3.x:** Required for the backend. [Download Python](https://www.python.org/downloads/)
-3.  **FFmpeg:** Required for audio file conversion. Must be installed on your system and available in the PATH environment variable. [Download FFmpeg](https://ffmpeg.org/download.html)
+3.  **FFmpeg:** Required for audio file conversion by Vosk and yt-dlp. Must be installed on your system and available in the PATH environment variable. [Download FFmpeg](https://ffmpeg.org/download.html)
     - Verify the installation by running `ffmpeg -version` in your terminal.
 4.  **Git:** Required for version control and GitHub. [Download Git](https://git-scm.com/downloads/)
 
@@ -81,7 +83,7 @@ vtest/
     # Windows (CMD):        .\venv\Scripts\activate.bat
     # macOS/Linux:          source venv/bin/activate
 
-    # Install dependencies (includes Flask, Vosk, Gemini SDK, export libs)
+    # Install dependencies (includes Flask, Vosk, yt-dlp, Gemini SDK, export libs)
     pip install -r requirements.txt
 
     # Download the Vosk Model
@@ -140,12 +142,13 @@ vtest/
 ## Usage
 
 1.  Open the web application in your browser.
-2.  Click the "Select Audio File" area to choose an audio file (MP3, WAV, etc.).
-3.  Click "Upload and Transcribe".
-4.  Wait for the transcription to appear.
-5.  Optionally, click the "Summarize" button next to the transcript title.
-6.  Wait for the summary to appear.
-7.  Click the "PDF" or "DOCX" buttons next to the transcript or summary titles to export them.
+2.  Choose your input method:
+    - **Audio File:** Click the "Select Audio File" area to choose an audio file (MP3, WAV, etc.). Then click "Upload and Transcribe".
+    - **YouTube Link:** Paste a valid YouTube video URL into the "YouTube Video Link" input field. Then click "Process YouTube Video".
+3.  Wait for the transcription to appear. The title of the YouTube video will be shown next to the transcript header if applicable.
+4.  Optionally, click the "Summarize" button next to the transcript title.
+5.  Wait for the summary to appear.
+6.  Click the "PDF" or "DOCX" buttons next to the transcript or summary titles to export them.
 
 ## Contributing
 
