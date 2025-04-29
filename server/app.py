@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import io  # Hafızada dosya işlemleri için
 from fpdf import FPDF  # PDF oluşturmak için
 from docx import Document  # DOCX oluşturmak için
+import yt_dlp  # YouTube indirme işlemleri için eklendi
 load_dotenv()
 
 
@@ -73,18 +74,58 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
+# --- Transkripsiyon için ayrı yardımcı fonksiyon ---
+def transcribe_audio(audio_filepath):
+    """
+    Belirtilen ses dosyasını Vosk ile metne dönüştürür.
+
+    Args:
+        audio_filepath: WAV formatında olan ses dosyasının yolu
+
+    Returns:
+        Transkript metni (string) veya hata durumunda None
+    """
+    global model
+    if model is None:
+        print("Hata: Vosk modeli yüklenmediği için transkripsiyon yapılamıyor.")
+        return None
+
+    try:
+        wf = wave.open(audio_filepath, "rb")
+        if wf.getframerate() != TARGET_SAMPLERATE or wf.getnchannels() != 1:
+            print(
+                f"Uyarı: Dosya beklenen formatta değil ({wf.getframerate()}Hz, {wf.getnchannels()} kanal).")
+
+        rec = KaldiRecognizer(model, wf.getframerate())
+        rec.SetWords(False)
+
+        results = []
+        while True:
+            data = wf.readframes(4000)
+            if len(data) == 0:
+                break
+            if rec.AcceptWaveform(data):
+                result_json = json.loads(rec.Result())
+                results.append(result_json.get('text', ''))
+
+        final_result_json = json.loads(rec.FinalResult())
+        results.append(final_result_json.get('text', ''))
+        full_transcription = " ".join(filter(None, results)).strip()
+        print(f"Transkripsiyon tamamlandı.")
+        wf.close()
+        return full_transcription
+    except Exception as e:
+        print(f"Transkripsiyon sırasında hata oluştu: {e}")
+        return None
+
+
 @app.route('/')
 def hello():
-    return "Backend Çalışıyor! (Vosk & FFmpeg Entegre Edildi)"
+    return "Backend Çalışıyor! (Vosk & FFmpeg & YouTube Entegre Edildi)"
 
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    global model
-    if model is None:
-        print("Hata: Vosk modeli yüklenmediği için işlem yapılamıyor.")
-        return jsonify({"error": "Ses tanıma modeli sunucuda yüklenemedi."}), 500
-
     if 'file' not in request.files:
         return jsonify({"error": "İstekte dosya bulunamadı"}), 400
 
@@ -143,29 +184,11 @@ def upload_file():
 
             # 3. Dönüştürülmüş WAV dosyasını Vosk ile işle
             if filepath_to_process:
-                wf = wave.open(filepath_to_process, "rb")
-                if wf.getframerate() != TARGET_SAMPLERATE or wf.getnchannels() != 1:
-                    # FFmpeg'in işini doğru yaptığını varsayıyoruz ama yine de kontrol edelim
-                    print(
-                        f"Uyarı: Dönüştürülmüş dosya hala beklenen formatta değil ({wf.getframerate()}Hz, {wf.getnchannels()} kanal). Vosk hatası olabilir.")
-
-                rec = KaldiRecognizer(model, wf.getframerate())
-                rec.SetWords(False)
-
-                results = []
-                while True:
-                    data = wf.readframes(4000)
-                    if len(data) == 0:
-                        break
-                    if rec.AcceptWaveform(data):
-                        result_json = json.loads(rec.Result())
-                        results.append(result_json.get('text', ''))
-
-                final_result_json = json.loads(rec.FinalResult())
-                results.append(final_result_json.get('text', ''))
-                full_transcription = " ".join(filter(None, results)).strip()
-                print(f"Transkripsiyon tamamlandı.")
-                wf.close()
+                # Transkripsiyon fonksiyonunu çağır
+                full_transcription = transcribe_audio(filepath_to_process)
+                if full_transcription is None:
+                    raise Exception(
+                        "Ses dosyası transkripsiyon sırasında bir hata oluştu.")
             else:
                 # Bu duruma normalde gelinmemeli (dönüşüm başarılıysa path atanır)
                 print("Hata: İşlenecek dönüştürülmüş dosya bulunamadı.")
@@ -208,6 +231,101 @@ def upload_file():
     else:
         allowed_types = ", ".join(ALLOWED_EXTENSIONS)
         return jsonify({"error": f"İzin verilmeyen dosya türü. Desteklenen türler: {allowed_types}"}), 400
+
+
+# Yeni YouTube işleme endpoint'i
+@app.route('/process_youtube', methods=['POST'])
+def process_youtube():
+    data = request.get_json()
+    if not data or 'youtube_url' not in data:
+        return jsonify({"error": "YouTube linki bulunamadı. İstekte 'youtube_url' alanı olmalıdır."}), 400
+
+    youtube_url = data['youtube_url']
+    if not youtube_url or not isinstance(youtube_url, str):
+        return jsonify({"error": "Geçerli bir YouTube linki gönderilmedi."}), 400
+
+    # Geçici dosya adları için benzersiz ID oluştur
+    temp_id = str(uuid.uuid4())
+    temp_audio_filepath = os.path.join(UPLOAD_FOLDER, f"{temp_id}_youtube.wav")
+
+    try:
+        print(f"YouTube linki işleniyor: {youtube_url}")
+
+        # yt-dlp seçeneklerini yapılandır
+        ydl_opts = {
+            'format': 'bestaudio/best',  # En iyi ses kalitesini seç
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',  # Ses çıkarma
+                'preferredcodec': 'wav',      # WAV formatına dönüştür
+                'preferredquality': '192',    # Bit hızı (isteğe bağlı)
+            }],
+            # .wav uzantısı yt-dlp tarafından eklenir
+            'outtmpl': temp_audio_filepath.replace('.wav', ''),
+            'quiet': True,  # Ekstra logları bastır
+            'no_warnings': True
+        }
+
+        # YouTube'dan ses indir
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(youtube_url, download=True)
+            video_title = info.get('title', 'YouTube Video')
+
+        # yt-dlp'nin çıktı dosya adını belirle (uzantı ekler)
+        downloaded_filepath = temp_audio_filepath.replace('.wav', '') + '.wav'
+
+        # FFmpeg ile gerekli formata dönüştür (16kHz, mono, s16 WAV) - Vosk için
+        temp_output_filepath = os.path.join(
+            UPLOAD_FOLDER, f"{temp_id}_converted.wav")
+
+        print(
+            f"FFmpeg ile '{temp_output_filepath}' dosyasına dönüştürülüyor...")
+        ffmpeg_command = [
+            'ffmpeg',
+            '-i', downloaded_filepath,    # yt-dlp'nin indirdiği dosya
+            '-ar', str(TARGET_SAMPLERATE),  # Örnekleme hızı
+            '-ac', '1',                     # Kanal sayısı (mono)
+            '-sample_fmt', 's16',           # Örnek formatı (16-bit PCM)
+            '-y',                           # Üzerine yaz
+            '-loglevel', 'error',           # Hataları göster, diğer logları gizle
+            temp_output_filepath            # Çıkış dosyası
+        ]
+
+        process = subprocess.run(
+            ffmpeg_command, capture_output=True, text=True, check=False)
+
+        if process.returncode != 0:
+            print(
+                f"FFmpeg hatası (kod {process.returncode}): {process.stderr}")
+            raise Exception(f"FFmpeg ses dönüştürme hatası: {process.stderr}")
+        else:
+            print(f"FFmpeg dönüşümü başarılı: {temp_output_filepath}")
+
+        # Transkripsiyon fonksiyonunu çağır
+        transcription = transcribe_audio(temp_output_filepath)
+        if not transcription:
+            raise Exception(
+                "YouTube sesi metne dönüştürülürken bir hata oluştu.")
+
+        # Sonucu döndür
+        return jsonify({
+            "message": "YouTube video sesi başarıyla metne dönüştürüldü.",
+            "video_title": video_title,
+            "youtube_url": youtube_url,
+            "transcription": transcription,
+        })
+
+    except Exception as e:
+        print(f"YouTube video işlenirken hata oluştu: {e}")
+        return jsonify({"error": f"YouTube video işlenirken bir hata oluştu: {e}"}), 500
+    finally:
+        # Geçici dosyaları temizle
+        for filepath in [downloaded_filepath, temp_output_filepath]:
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                    print(f"Geçici dosya silindi: {filepath}")
+                except OSError as e:
+                    print(f"Geçici dosya silinirken hata ({filepath}): {e}")
 
 
 # Yeni Özetleme Endpoint'i
